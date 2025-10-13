@@ -3,8 +3,15 @@ import { toRadians } from "../math_util";
 import { device, canvas, fovYDegrees, aspectRatio } from "../renderer";
 
 class CameraUniforms {
-    readonly buffer = new ArrayBuffer(16 * 4);
+    readonly buffer = new ArrayBuffer(
+        16 * 4 +  // viewProjMat (64 bytes)
+        16 * 4 +  // invProjMat (64 bytes)
+        16 * 4 +  // viewMat (64 bytes) - NEW
+        2 * 4 +   // screenDimensions (8 bytes)
+        2 * 4     // padding to maintain 16-byte alignment
+    );
     private readonly floatView = new Float32Array(this.buffer);
+    private readonly uintView = new Uint32Array(this.buffer);
 
     set viewProjMat(mat: Float32Array) {
         // TODO-1.1: set the first 16 elements of `this.floatView` to the input `mat`
@@ -13,6 +20,16 @@ class CameraUniforms {
     }
 
     // TODO-2: add extra functions to set values needed for light clustering here
+    set invProjMat(mat: Float32Array) {
+        this.floatView.set(mat, 16);
+    }
+
+    setScreenDimensions(width: number, height: number) {
+        // After 3 matrices (48 floats), we have screenDimensions
+        this.uintView[48] = width;
+        this.uintView[49] = height;
+    }
+
 }
 
 export class Camera {
@@ -142,6 +159,14 @@ export class Camera {
         this.uniforms.viewProjMat = viewProjMat;
 
         // TODO-2: write to extra buffers needed for light clustering here
+        // Set inverse projection matrix for clustering
+        const invProjMat = mat4.invert(this.projMat);
+        this.uniforms.invProjMat = invProjMat;
+
+        // Set screen dimensions
+        this.uniforms.viewMat = viewMat;
+        this.uniforms.setScreenDimensions(canvas.width, canvas.height);
+
 
         // TODO-1.1: upload `this.uniforms.buffer` (host side) to `this.uniformsBuffer` (device side)
         // check `lights.ts` for examples of using `device.queue.writeBuffer()`
