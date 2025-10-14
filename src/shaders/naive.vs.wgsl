@@ -12,6 +12,7 @@ struct VertexInput
     @location(1) nor: vec3f,
     @location(2) uv: vec2f
 }
+    
 
 struct VertexOutput
 {

@@ -23,6 +23,9 @@ class CameraUniforms {
     set invProjMat(mat: Float32Array) {
         this.floatView.set(mat, 16);
     }
+    set viewMat(mat: Float32Array) {
+        this.floatView.set(mat, 32);
+    }
 
     setScreenDimensions(width: number, height: number) {
         // After 3 matrices (48 floats), we have screenDimensions
