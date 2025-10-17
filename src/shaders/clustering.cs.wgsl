@@ -32,7 +32,7 @@ const clusterWidth = ${clusterWidth};
 const clusterHeight = ${clusterHeight};
 const clusterDepth = ${clusterDepth};
 const maxLightsPerCluster = ${maxLightsPerCluster};
-const lightRadius = ${lightRadius};
+// const lightRadius = ${lightRadius};
 
 const nearPlane = 0.1;
 const farPlane = 1000.0;
@@ -132,7 +132,7 @@ fn main(@builtin(global_invocation_id) globalId: vec3u) {
         let light = lightSet.lights[lightIdx];
         let lightPos = (camUniforms.viewMat * vec4f(light.pos, 1.0)).xyz;
         
-        if (sphereIntersectsCluster(planes, lightPos, lightRadius)) {
+        if (sphereIntersectsCluster(planes, lightPos, 2)) {
             clusterSet.clusters[clusterIndex].lightIndices[numLights] = lightIdx;
             numLights++;
         }
