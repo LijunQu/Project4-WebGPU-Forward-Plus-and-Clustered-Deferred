@@ -73,52 +73,59 @@ fn main(@builtin(global_invocation_id) globalId: vec3u) {
         return;
     }
     
-    // Calculate tile size in pixels
+    // Calculate screen space bounds
     let tileSize = vec2f(
         f32(cameraUniforms.screenDimensions.x) / f32(clusterWidth),
         f32(cameraUniforms.screenDimensions.y) / f32(clusterHeight)
     );
     
-    // Screen space bounds for this cluster
     let minScreen = vec2f(f32(clusterCoord.x), f32(clusterCoord.y)) * tileSize;
     let maxScreen = minScreen + tileSize;
     
-    // Depth bounds for this cluster
+    // Calculate depth bounds
     let depthSliceSize = (farPlane - nearPlane) / f32(clusterDepth);
     let minDepth = nearPlane + f32(clusterCoord.z) * depthSliceSize;
     let maxDepth = minDepth + depthSliceSize;
     
-    // Convert to NDC depth
+    // Convert depth to NDC
     let minDepthNDC = (minDepth - nearPlane) / (farPlane - nearPlane) * 2.0 - 1.0;
     let maxDepthNDC = (maxDepth - nearPlane) / (farPlane - nearPlane) * 2.0 - 1.0;
     
-    // Get 8 corners of cluster frustum in view space
-    let minNear = screenToView(minScreen, minDepthNDC);
-    let maxNear = screenToView(maxScreen, minDepthNDC);
-    let minFar = screenToView(minScreen, maxDepthNDC);
-    let maxFar = screenToView(maxScreen, maxDepthNDC);
+    // Get the 4 corners at near and far depth
+    let minScreenNear = screenToView(minScreen, minDepthNDC);
+    let maxScreenNear = screenToView(maxScreen, minDepthNDC);
+    let minMaxNear = screenToView(vec2f(minScreen.x, maxScreen.y), minDepthNDC);
+    let maxMinNear = screenToView(vec2f(maxScreen.x, minScreen.y), minDepthNDC);
     
-    // Build AABB from the frustum corners
-    var aabbMin = min(min(minNear, maxNear), min(minFar, maxFar));
-    var aabbMax = max(max(minNear, maxNear), max(maxFar, maxFar));
+    let minScreenFar = screenToView(minScreen, maxDepthNDC);
+    let maxScreenFar = screenToView(maxScreen, maxDepthNDC);
+    let minMaxFar = screenToView(vec2f(minScreen.x, maxScreen.y), maxDepthNDC);
+    let maxMinFar = screenToView(vec2f(maxScreen.x, minScreen.y), maxDepthNDC);
+    
+    // Build AABB from all 8 corners
+    var aabbMin = min(
+        min(min(minScreenNear, maxScreenNear), min(minMaxNear, maxMinNear)),
+        min(min(minScreenFar, maxScreenFar), min(minMaxFar, maxMinFar))
+    );
+    
+    var aabbMax = max(
+        max(max(minScreenNear, maxScreenNear), max(minMaxNear, maxMinNear)),
+        max(max(minScreenFar, maxScreenFar), max(minMaxFar, maxMinFar))
+    );
     
     let clusterIndex = getClusterIndex(clusterCoord);
     let clusterOffset = getClusterOffset(clusterIndex);
     
     var lightCount = 0u;
     
-    // Test each light against this cluster
     for (var lightIdx = 0u; lightIdx < lightSet.numLights; lightIdx++) {
         if (lightCount >= maxLightsPerCluster) {
             break;
         }
         
         let light = lightSet.lights[lightIdx];
-        
-        // Transform light position to view space
         let lightPosView = (cameraUniforms.viewMat * vec4f(light.pos, 1.0)).xyz;
         
-        // Test if light sphere intersects cluster AABB
         if (sphereAABBIntersection(lightPosView, lightRadius, aabbMin, aabbMax)) {
             clusterSet.clusters[clusterOffset + 1 + lightCount] = lightIdx;
             lightCount++;
