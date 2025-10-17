@@ -69,16 +69,6 @@ fn zBounds(index: u32) -> vec2f {
     return vec2f(d0, d1);
 }
 
-fn getClusterIndex(clusterCoord: vec3u) -> u32 {
-    return clusterCoord.x + 
-           clusterCoord.y * clusterWidth + 
-           clusterCoord.z * clusterWidth * clusterHeight;
-}
-
-fn getClusterOffset(clusterIndex: u32) -> u32 {
-    return clusterIndex * (1 + maxLightsPerCluster);
-}
-
 @compute @workgroup_size(4, 4, 4)
 fn main(@builtin(global_invocation_id) globalId: vec3u) {
     let clusterCoord = globalId;
@@ -93,23 +83,23 @@ fn main(@builtin(global_invocation_id) globalId: vec3u) {
     let clusterIdY = clusterCoord.y;
     let clusterIdZ = clusterCoord.z;
     
-    // Calculate NDC bounds for this cluster
+    // Calculate NDC bounds
     let x0 = (f32(clusterIdX) / f32(clusterWidth)) * 2.0 - 1.0;
     let x1 = (f32(clusterIdX + 1u) / f32(clusterWidth)) * 2.0 - 1.0;
     let y1 = 1.0 - (f32(clusterIdY) / f32(clusterHeight)) * 2.0;
     let y0 = 1.0 - (f32(clusterIdY + 1u) / f32(clusterHeight)) * 2.0;
     
     // Get rays for the 4 corners
-    let r00 = rayFromNdcXY(vec2f(x0, y0)); // left-bottom
-    let r10 = rayFromNdcXY(vec2f(x1, y0)); // right-bottom
-    let r01 = rayFromNdcXY(vec2f(x0, y1)); // left-top
-    let r11 = rayFromNdcXY(vec2f(x1, y1)); // right-top
+    let r00 = rayFromNdcXY(vec2f(x0, y0));
+    let r10 = rayFromNdcXY(vec2f(x1, y0));
+    let r01 = rayFromNdcXY(vec2f(x0, y1));
+    let r11 = rayFromNdcXY(vec2f(x1, y1));
     
     // Calculate frustum planes
-    var nL = normalize(cross(r01, r00)); // left
-    var nR = normalize(cross(r10, r11)); // right
-    var nB = normalize(cross(r00, r10)); // bottom
-    var nT = normalize(cross(r11, r01)); // top
+    var nL = normalize(cross(r01, r00));
+    var nR = normalize(cross(r10, r11));
+    var nB = normalize(cross(r00, r10));
+    var nT = normalize(cross(r11, r01));
     
     // Depth bounds
     let dz = zBounds(clusterIdZ);
@@ -130,8 +120,8 @@ fn main(@builtin(global_invocation_id) globalId: vec3u) {
         Plane(nFar, dFar)
     );
     
-    let clusterIndex = getClusterIndex(clusterCoord);
-    let clusterOffset = getClusterOffset(clusterIndex);
+    // Calculate cluster index in array
+    let clusterIndex = clusterIdX + clusterIdY * clusterWidth + clusterIdZ * clusterWidth * clusterHeight;
     
     var numLights = 0u;
     for (var lightIdx = 0u; lightIdx < lightSet.numLights; lightIdx++) {
@@ -143,10 +133,10 @@ fn main(@builtin(global_invocation_id) globalId: vec3u) {
         let lightPos = (camUniforms.viewMat * vec4f(light.pos, 1.0)).xyz;
         
         if (sphereIntersectsCluster(planes, lightPos, lightRadius)) {
-            clusterSet.clusters[clusterOffset + 1 + numLights] = lightIdx;
+            clusterSet.clusters[clusterIndex].lightIndices[numLights] = lightIdx;
             numLights++;
         }
     }
     
-    clusterSet.clusters[clusterOffset] = numLights;
+    clusterSet.clusters[clusterIndex].numLights = numLights;
 }

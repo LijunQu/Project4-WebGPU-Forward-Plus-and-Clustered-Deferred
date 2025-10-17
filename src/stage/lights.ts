@@ -1,5 +1,5 @@
 import { vec3 } from "wgpu-matrix";
-import { device } from "../renderer";
+import { device, canvas } from "../renderer";
 
 import * as shaders from '../shaders/shaders';
 import { Camera } from "./camera";
@@ -101,18 +101,31 @@ export class Lights {
 
         // TODO-2: initialize layouts, pipelines, textures, etc. needed for light clustering here
         // Initialize clustering resources
-        const numClusters = shaders.constants.clusterWidth *
-            shaders.constants.clusterHeight *
-            shaders.constants.clusterDepth;
+        // These ARE the cluster counts, not pixel sizes!
+        const numClustersX = shaders.constants.clusterWidth;
+        const numClustersY = shaders.constants.clusterHeight;
+        const numClusters = numClustersX * numClustersY * shaders.constants.clusterDepth;
 
-        // Each cluster stores: 1 count + up to maxLightsPerCluster indices
-        const clusterDataSize = numClusters * (1 + shaders.constants.maxLightsPerCluster) * 4; // 4 bytes per u32
+        // Match reference calculation
+        const clusterDataSize = 16 + shaders.constants.maxLightsPerCluster * numClusters * 4;
+
+        console.log(`Creating cluster buffer: ${clusterDataSize} bytes for ${numClusters} clusters`);
+
 
         this.clusterBuffer = device.createBuffer({
             label: "clusters",
             size: clusterDataSize,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
         });
+
+        // Write numClusterX and numClusterY to the buffer
+        device.queue.writeBuffer(
+            this.clusterBuffer,
+            0,
+            new Uint32Array([numClustersX, numClustersY, 0, 0])
+        );
+
+
 
         // Create bind group layout for clustering compute shader
         this.clusteringComputeBindGroupLayout = device.createBindGroupLayout({

@@ -15,8 +15,17 @@ struct LightSet {
 // - lightCount (1 u32)
 // - lightIndices (up to maxLightsPerCluster u32s)
 // Total size per cluster: (1 + maxLightsPerCluster) u32s
+struct Cluster {
+    numLights: u32,
+    lightIndices: array<u32, ${maxLightsPerCluster} - 1>
+}
+
 struct ClusterSet {
-    clusters: array<u32>  // Flat array: [cluster0_count, cluster0_indices..., cluster1_count, cluster1_indices...]
+    numClusterX: u32,
+    numClusterY: u32,
+    padding1: u32,
+    padding2: u32,
+    clusters: array<Cluster>
 }
 
 struct CameraUniforms {

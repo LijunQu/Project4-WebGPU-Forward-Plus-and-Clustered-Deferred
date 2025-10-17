@@ -10,7 +10,6 @@
 const clusterWidth = ${clusterWidth};
 const clusterHeight = ${clusterHeight};
 const clusterDepth = ${clusterDepth};
-const maxLightsPerCluster = ${maxLightsPerCluster};
 const nearPlane = 0.1;
 const farPlane = 1000.0;
 
@@ -28,7 +27,6 @@ fn main(in: FragmentInput) -> @location(0) vec4f
     let nor = textureLoad(gBufferNormal, pixelCoord, 0).xyz;
     let albedo = textureLoad(gBufferAlbedo, pixelCoord, 0);
     
-    // Calculate cluster index
     let clusterX = u32(in.fragCoord.x / (f32(cameraUniforms.screenDimensions.x) / f32(clusterWidth)));
     let clusterY = u32(in.fragCoord.y / (f32(cameraUniforms.screenDimensions.y) / f32(clusterHeight)));
     
@@ -42,26 +40,15 @@ fn main(in: FragmentInput) -> @location(0) vec4f
     let cz = min(clusterZ, clusterDepth - 1);
     
     let clusterIndex = cx + cy * clusterWidth + cz * clusterWidth * clusterHeight;
-    let clusterOffset = clusterIndex * (1 + maxLightsPerCluster);
-    let lightCount = clusterSet.clusters[clusterOffset];
+    
+    // Access using struct
+    let lightCount = clusterSet.clusters[clusterIndex].numLights;
     
     var totalLightContrib = vec3f(0.0);
-    
-    // Hybrid: Use clustering if available, otherwise fallback
-    if (lightCount > 0u) {
-        // Use clustered lights
-        let safeCount = min(lightCount, maxLightsPerCluster);
-        for (var i = 0u; i < safeCount; i++) {
-            let lightIdx = clusterSet.clusters[clusterOffset + 1u + i];
-            if (lightIdx < lightSet.numLights) {
-                totalLightContrib += calculateLightContrib(lightSet.lights[lightIdx], position, nor);
-            }
-        }
-    } else {
-        // Fallback: use all lights
-        for (var i = 0u; i < lightSet.numLights; i++) {
-            totalLightContrib += calculateLightContrib(lightSet.lights[i], position, nor);
-        }
+    for (var i = 0u; i < lightCount; i++) {
+        let lightIdx = clusterSet.clusters[clusterIndex].lightIndices[i];
+        let light = lightSet.lights[lightIdx];
+        totalLightContrib += calculateLightContrib(light, position, nor);
     }
     
     return vec4f(albedo.rgb * totalLightContrib, 1.0);
