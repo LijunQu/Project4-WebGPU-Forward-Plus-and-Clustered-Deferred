@@ -32,7 +32,6 @@ const clusterWidth = ${clusterWidth};
 const clusterHeight = ${clusterHeight};
 const clusterDepth = ${clusterDepth};
 const maxLightsPerCluster = ${maxLightsPerCluster};
-// const lightRadius = ${lightRadius};
 
 const nearPlane = 0.1;
 const farPlane = 1000.0;
