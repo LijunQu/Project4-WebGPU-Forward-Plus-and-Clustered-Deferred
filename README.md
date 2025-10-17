@@ -12,7 +12,9 @@ https://lijunqu.github.io/Project4-WebGPU-Forward-Plus-and-Clustered-Deferred/
 
 ### Demo Video/GIF
 
-![](image/video.mp4)
+<video width="640" controls>
+  <source src="image/video.mp4" type="video/mp4">
+</video>
 
 ---
 
