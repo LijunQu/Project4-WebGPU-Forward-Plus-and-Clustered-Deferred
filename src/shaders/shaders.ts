@@ -36,7 +36,6 @@ export const constants = {
     clusterDepth: 24,
     maxLightsPerCluster: 1024,
 
-    lightRadius: 2
 };
 
 // =================================
