@@ -24,7 +24,7 @@
 
 // Clustering compute shader
 // This shader determines which lights affect which clusters
-@group(0) @binding(0) var<uniform> cameraUniforms: CameraUniforms;
+@group(0) @binding(0) var<uniform> camUniforms: CameraUniforms;
 @group(0) @binding(1) var<storage, read> lightSet: LightSet;
 @group(0) @binding(2) var<storage, read_write> clusterSet: ClusterSet;
 
@@ -37,6 +37,38 @@ const lightRadius = ${lightRadius};
 const nearPlane = 0.1;
 const farPlane = 1000.0;
 
+struct Plane {
+    n: vec3f,
+    d: f32
+}
+
+fn rayFromNdcXY(ndcXY: vec2f) -> vec3f {
+    let p4 = camUniforms.invProjMat * vec4f(ndcXY, 1.0, 1.0);
+    let pv = p4.xyz / p4.w;
+    return normalize(pv);
+}
+
+fn sphereIntersectsCluster(planes: array<Plane, 6>, center: vec3f, radius: f32) -> bool {
+    for (var p = 0u; p < 6; p++) {
+        var dist = dot(planes[p].n, center) + planes[p].d;
+        if (dist > radius) {
+            return false;
+        }
+    }
+    return true;
+}
+
+fn zBounds(index: u32) -> vec2f {
+    let numClustersZ = f32(clusterDepth);
+    let dn = nearPlane;
+    let df = farPlane;
+    let t0 = f32(index) / numClustersZ;
+    let t1 = f32(index + 1u) / numClustersZ;
+    let d0 = mix(dn, df, t0);
+    let d1 = mix(dn, df, t1);
+    return vec2f(d0, d1);
+}
+
 fn getClusterIndex(clusterCoord: vec3u) -> u32 {
     return clusterCoord.x + 
            clusterCoord.y * clusterWidth + 
@@ -45,22 +77,6 @@ fn getClusterIndex(clusterCoord: vec3u) -> u32 {
 
 fn getClusterOffset(clusterIndex: u32) -> u32 {
     return clusterIndex * (1 + maxLightsPerCluster);
-}
-
-fn sphereAABBIntersection(sphereCenter: vec3f, sphereRadius: f32, aabbMin: vec3f, aabbMax: vec3f) -> bool {
-    let closestPoint = clamp(sphereCenter, aabbMin, aabbMax);
-    let distance = length(sphereCenter - closestPoint);
-    return distance <= sphereRadius;
-}
-
-fn screenToView(screenCoord: vec2f, depth: f32) -> vec3f {
-    let ndc = vec3f(
-        screenCoord.x / f32(cameraUniforms.screenDimensions.x) * 2.0 - 1.0,
-        1.0 - (screenCoord.y / f32(cameraUniforms.screenDimensions.y)) * 2.0,
-        depth
-    );
-    let viewSpace = cameraUniforms.invProjMat * vec4f(ndc, 1.0);
-    return viewSpace.xyz / viewSpace.w;
 }
 
 @compute @workgroup_size(4, 4, 4)
@@ -73,64 +89,64 @@ fn main(@builtin(global_invocation_id) globalId: vec3u) {
         return;
     }
     
-    // Calculate screen space bounds
-    let tileSize = vec2f(
-        f32(cameraUniforms.screenDimensions.x) / f32(clusterWidth),
-        f32(cameraUniforms.screenDimensions.y) / f32(clusterHeight)
-    );
+    let clusterIdX = clusterCoord.x;
+    let clusterIdY = clusterCoord.y;
+    let clusterIdZ = clusterCoord.z;
     
-    let minScreen = vec2f(f32(clusterCoord.x), f32(clusterCoord.y)) * tileSize;
-    let maxScreen = minScreen + tileSize;
+    // Calculate NDC bounds for this cluster
+    let x0 = (f32(clusterIdX) / f32(clusterWidth)) * 2.0 - 1.0;
+    let x1 = (f32(clusterIdX + 1u) / f32(clusterWidth)) * 2.0 - 1.0;
+    let y1 = 1.0 - (f32(clusterIdY) / f32(clusterHeight)) * 2.0;
+    let y0 = 1.0 - (f32(clusterIdY + 1u) / f32(clusterHeight)) * 2.0;
     
-    // Calculate depth bounds
-    let depthSliceSize = (farPlane - nearPlane) / f32(clusterDepth);
-    let minDepth = nearPlane + f32(clusterCoord.z) * depthSliceSize;
-    let maxDepth = minDepth + depthSliceSize;
+    // Get rays for the 4 corners
+    let r00 = rayFromNdcXY(vec2f(x0, y0)); // left-bottom
+    let r10 = rayFromNdcXY(vec2f(x1, y0)); // right-bottom
+    let r01 = rayFromNdcXY(vec2f(x0, y1)); // left-top
+    let r11 = rayFromNdcXY(vec2f(x1, y1)); // right-top
     
-    // Convert depth to NDC
-    let minDepthNDC = (minDepth - nearPlane) / (farPlane - nearPlane) * 2.0 - 1.0;
-    let maxDepthNDC = (maxDepth - nearPlane) / (farPlane - nearPlane) * 2.0 - 1.0;
+    // Calculate frustum planes
+    var nL = normalize(cross(r01, r00)); // left
+    var nR = normalize(cross(r10, r11)); // right
+    var nB = normalize(cross(r00, r10)); // bottom
+    var nT = normalize(cross(r11, r01)); // top
     
-    // Get the 4 corners at near and far depth
-    let minScreenNear = screenToView(minScreen, minDepthNDC);
-    let maxScreenNear = screenToView(maxScreen, minDepthNDC);
-    let minMaxNear = screenToView(vec2f(minScreen.x, maxScreen.y), minDepthNDC);
-    let maxMinNear = screenToView(vec2f(maxScreen.x, minScreen.y), minDepthNDC);
+    // Depth bounds
+    let dz = zBounds(clusterIdZ);
+    let dNearSlice = dz.x;
+    let dFarSlice = dz.y;
     
-    let minScreenFar = screenToView(minScreen, maxDepthNDC);
-    let maxScreenFar = screenToView(maxScreen, maxDepthNDC);
-    let minMaxFar = screenToView(vec2f(minScreen.x, maxScreen.y), maxDepthNDC);
-    let maxMinFar = screenToView(vec2f(maxScreen.x, minScreen.y), maxDepthNDC);
+    let nNear = vec3f(0.0, 0.0, 1.0);
+    let dNear = dNearSlice;
+    let nFar = vec3f(0.0, 0.0, -1.0);
+    let dFar = -dFarSlice;
     
-    // Build AABB from all 8 corners
-    var aabbMin = min(
-        min(min(minScreenNear, maxScreenNear), min(minMaxNear, maxMinNear)),
-        min(min(minScreenFar, maxScreenFar), min(minMaxFar, maxMinFar))
-    );
-    
-    var aabbMax = max(
-        max(max(minScreenNear, maxScreenNear), max(minMaxNear, maxMinNear)),
-        max(max(minScreenFar, maxScreenFar), max(minMaxFar, maxMinFar))
+    let planes = array<Plane, 6>(
+        Plane(nL, 0.0),
+        Plane(nR, 0.0),
+        Plane(nB, 0.0),
+        Plane(nT, 0.0),
+        Plane(nNear, dNear),
+        Plane(nFar, dFar)
     );
     
     let clusterIndex = getClusterIndex(clusterCoord);
     let clusterOffset = getClusterOffset(clusterIndex);
     
-    var lightCount = 0u;
-    
+    var numLights = 0u;
     for (var lightIdx = 0u; lightIdx < lightSet.numLights; lightIdx++) {
-        if (lightCount >= maxLightsPerCluster) {
+        if (numLights >= maxLightsPerCluster) {
             break;
         }
         
         let light = lightSet.lights[lightIdx];
-        let lightPosView = (cameraUniforms.viewMat * vec4f(light.pos, 1.0)).xyz;
+        let lightPos = (camUniforms.viewMat * vec4f(light.pos, 1.0)).xyz;
         
-        if (sphereAABBIntersection(lightPosView, lightRadius, aabbMin, aabbMax)) {
-            clusterSet.clusters[clusterOffset + 1 + lightCount] = lightIdx;
-            lightCount++;
+        if (sphereIntersectsCluster(planes, lightPos, lightRadius)) {
+            clusterSet.clusters[clusterOffset + 1 + numLights] = lightIdx;
+            numLights++;
         }
     }
     
-    clusterSet.clusters[clusterOffset] = lightCount;
+    clusterSet.clusters[clusterOffset] = numLights;
 }

@@ -25,6 +25,8 @@ const clusterWidth = ${clusterWidth};
 const clusterHeight = ${clusterHeight};
 const clusterDepth = ${clusterDepth};
 const maxLightsPerCluster = ${maxLightsPerCluster};
+const nearPlane = 0.1;
+const farPlane = 1000.0;
 
 struct FragmentInput
 {
@@ -32,24 +34,6 @@ struct FragmentInput
     @location(0) pos: vec3f,
     @location(1) nor: vec3f,
     @location(2) uv: vec2f
-}
-
-fn getClusterIndex(fragCoord: vec4f) -> u32 {
-    let clusterX = u32(fragCoord.x / (f32(cameraUniforms.screenDimensions.x) / f32(clusterWidth)));
-    let clusterY = u32(fragCoord.y / (f32(cameraUniforms.screenDimensions.y) / f32(clusterHeight)));
-    let clusterZ = u32(fragCoord.z * f32(clusterDepth));
-    
-    let clusterXClamped = min(clusterX, clusterWidth - 1);
-    let clusterYClamped = min(clusterY, clusterHeight - 1);
-    let clusterZClamped = min(clusterZ, clusterDepth - 1);
-    
-    return clusterXClamped + 
-           clusterYClamped * clusterWidth + 
-           clusterZClamped * clusterWidth * clusterHeight;
-}
-
-fn getClusterOffset(clusterIndex: u32) -> u32 {
-    return clusterIndex * (1 + maxLightsPerCluster);
 }
 
 @fragment
@@ -60,8 +44,24 @@ fn main(in: FragmentInput) -> @location(0) vec4f
         discard;
     }
 
-    let clusterIndex = getClusterIndex(in.fragCoord);
-    let clusterOffset = getClusterOffset(clusterIndex);
+    // Calculate cluster index
+    let clusterX = u32(in.fragCoord.x / (f32(cameraUniforms.screenDimensions.x) / f32(clusterWidth)));
+    let clusterY = u32(in.fragCoord.y / (f32(cameraUniforms.screenDimensions.y) / f32(clusterHeight)));
+    
+    // Calculate view space depth
+    let viewPos = (cameraUniforms.viewMat * vec4f(in.pos, 1.0)).xyz;
+    let viewDepth = -viewPos.z;
+    
+    // Map to cluster Z
+    let depthNorm = clamp((viewDepth - nearPlane) / (farPlane - nearPlane), 0.0, 1.0);
+    let clusterZ = u32(floor(depthNorm * f32(clusterDepth)));
+    
+    let cx = min(clusterX, clusterWidth - 1);
+    let cy = min(clusterY, clusterHeight - 1);
+    let cz = min(clusterZ, clusterDepth - 1);
+    
+    let clusterIndex = cx + cy * clusterWidth + cz * clusterWidth * clusterHeight;
+    let clusterOffset = clusterIndex * (1 + maxLightsPerCluster);
     let lightCount = clusterSet.clusters[clusterOffset];
     
     var totalLightContrib = vec3f(0, 0, 0);
