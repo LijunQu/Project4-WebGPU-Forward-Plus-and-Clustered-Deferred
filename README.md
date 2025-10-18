@@ -27,7 +27,7 @@ The project builds upon a Naive Forward Renderer baseline and adds clustering, c
 
 
 
-## ✨ Features
+## Features
 
 ### Naive Forward Rendering
 **Overview:**  
