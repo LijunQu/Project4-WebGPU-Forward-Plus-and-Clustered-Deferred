@@ -134,12 +134,12 @@ The number of lights was varied from 128 to 5000, with a constant cluster config
 
 ### Observations
 
-#### 1️⃣ Naïve Forward
+#### Naïve Forward
 - **Scaling:** Frame time increases almost linearly with the number of lights.  
 - **Reason:** Each pixel iterates over *all* active lights regardless of distance, causing exponential fragment load.  
 - **Outcome:** Quickly becomes GPU-bound beyond 512 lights.
 
-#### 2️⃣ Forward+
+#### Forward+
 - **Scaling:** Frame time grows slowly and remains under 100 ms even at 4096 lights.  
 - **Reason:** Light culling is performed once per frame in a compute pass. Each fragment then only shades the lights within its cluster (typically 10–30).  
 - **Trade-offs:**  
@@ -147,7 +147,7 @@ The number of lights was varied from 128 to 5000, with a constant cluster config
   - Retains ability to shade transparent surfaces (since still a forward pass).  
 - **Best for:** scenes with mixed opaque/transparent objects and moderate light counts (hundreds to low thousands).
 
-#### 3️⃣ Clustered Deferred
+#### Clustered Deferred
 - **Scaling:** Frame time remains nearly constant from 128 to 5000 lights.  
 - **Reason:** Lighting is decoupled from geometry — only screen pixels are shaded once using clustered light lists.  
 - **Trade-offs:**  
@@ -157,7 +157,7 @@ The number of lights was varied from 128 to 5000, with a constant cluster config
 
 ---
 
-### 4️⃣ Which One Is Faster?
+### Which One Is Faster?
 
 | Scene Type | Best Pipeline | Why |
 |:--|:--|:--|
@@ -168,7 +168,7 @@ The number of lights was varied from 128 to 5000, with a constant cluster config
 
 ---
 
-### 5️⃣ Benefits and Trade-offs
+### Benefits and Trade-offs
 
 | Pipeline | Advantages | Disadvantages |
 |:--|:--|:--|
@@ -178,7 +178,7 @@ The number of lights was varied from 128 to 5000, with a constant cluster config
 
 ---
 
-### 6️⃣ Performance Optimization Summary
+### Performance Optimization Summary
 
 | Optimization | Description | Before (ms) | After (ms) | Δ (%) |
 |:--|:--|:--:|:--:|:--:|
@@ -189,7 +189,7 @@ The number of lights was varied from 128 to 5000, with a constant cluster config
 
 ---
 
-### 7️⃣ Key Takeaways
+### Key Takeaways
 - **Forward+** provides a good trade-off between flexibility and performance.  
 - **Clustered Deferred** achieves near-constant frame times even for thousands of lights.  
 - **Naïve Forward** becomes infeasible for large dynamic scenes.  
@@ -198,15 +198,7 @@ The number of lights was varied from 128 to 5000, with a constant cluster config
 
 ---
 
-### 8️⃣ Debug Views
-| Debug Mode | Description |
-|:--|:--|
-| Cluster Heatmap | Visualizes light density per cluster; denser regions correlate with slightly higher lighting cost. |
-| Depth Slices View | Shows Z-binning effect — helps verify that near/far lights are assigned correctly. |
-
----
-
-### 🧩 Conclusion
+### Conclusion
 The performance results validate that clustered light culling significantly improves scalability.  
 While Forward+ remains practical for most real-time applications, the Clustered Deferred approach demonstrates superior performance in light-dense scenes and forms a foundation for more advanced rendering features such as PBR and screen-space effects.
 
