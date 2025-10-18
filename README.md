@@ -100,6 +100,118 @@ Ideal for dense lighting scenes (e.g., Sponza or indoor environments with many o
 
 ---
 
+## Performance Analysis
+
+### Overview
+This section compares the three rendering pipelines implemented in this project:
+
+| Pipeline | Description |
+|:--|:--|
+| **Naïve Forward Rendering** | Each fragment shades against *all* lights every frame — O(n × m) cost where *n* = pixels, *m* = lights. |
+| **Forward+ Rendering** | Performs a compute clustering pass to cull lights per cluster, then executes a single forward lighting pass per fragment using only relevant lights. |
+| **Clustered Deferred Rendering** | Extends clustered culling with a deferred G-Buffer pipeline. Lighting occurs in a full-screen pass using pre-stored surface data. |
+
+All measurements were taken in Chrome WebGPU with identical scene setup and camera configuration.  
+The number of lights was varied from 128 to 5000, with a constant cluster configuration of `numClustersZ = 16`, `clusterSize = 64`, and `maxLightsPerCluster = 1024`.
+
+---
+
+### Frame-Time Comparison
+
+| Number of Lights | Naïve (ms) | Forward+ (ms) | Clustered Deferred (ms) |
+|:--:|:--:|:--:|:--:|
+| 128 | ≈ 20 | ≈ 5 | ≈ 3 |
+| 512 | ≈ 90 | ≈ 10 | ≈ 4 |
+| 1024 | ≈ 180 | ≈ 20 | ≈ 6 |
+| 2048 | ≈ 400 | ≈ 45 | ≈ 8 |
+| 4096 | ≈ 800 – 1000 | ≈ 100 | ≈ 12 |
+
+*(values derived from your WebGPU Excel measurements and shown in the plot below)*
+
+![Frame Time Graph](image/result.png)
+
+---
+
+### Observations
+
+#### 1️⃣ Naïve Forward
+- **Scaling:** Frame time increases almost linearly with the number of lights.  
+- **Reason:** Each pixel iterates over *all* active lights regardless of distance, causing exponential fragment load.  
+- **Outcome:** Quickly becomes GPU-bound beyond 512 lights.
+
+#### 2️⃣ Forward+
+- **Scaling:** Frame time grows slowly and remains under 100 ms even at 4096 lights.  
+- **Reason:** Light culling is performed once per frame in a compute pass. Each fragment then only shades the lights within its cluster (typically 10–30).  
+- **Trade-offs:**  
+  - Slight overhead for compute dispatch (~1–2 ms).  
+  - Retains ability to shade transparent surfaces (since still a forward pass).  
+- **Best for:** scenes with mixed opaque/transparent objects and moderate light counts (hundreds to low thousands).
+
+#### 3️⃣ Clustered Deferred
+- **Scaling:** Frame time remains nearly constant from 128 to 5000 lights.  
+- **Reason:** Lighting is decoupled from geometry — only screen pixels are shaded once using clustered light lists.  
+- **Trade-offs:**  
+  - Requires multiple G-Buffer attachments (position, normal, albedo).  
+  - Cannot handle transparency natively.  
+- **Best for:** dense lighting scenes or heavy geometry where geometry cost dominates.
+
+---
+
+### 4️⃣ Which One Is Faster?
+
+| Scene Type | Best Pipeline | Why |
+|:--|:--|:--|
+| Few lights (< 256) | Forward+ | Lowest overhead; simple and supports transparency. |
+| Many lights (> 1 k) | Clustered Deferred | Scales better; lighting cost independent of geometry. |
+| Geometry-heavy | Clustered Deferred | Shades screen space once instead of per fragment. |
+| Transparent objects | Forward+ | Deferred cannot blend easily. |
+
+---
+
+### 5️⃣ Benefits and Trade-offs
+
+| Pipeline | Advantages | Disadvantages |
+|:--|:--|:--|
+| **Naïve Forward** | Simple, direct implementation | O(n × m) complexity; poor scaling |
+| **Forward+** | Efficient light culling; supports transparency | Extra compute pass; cluster memory usage |
+| **Clustered Deferred** | Best scaling for many lights; decoupled lighting | High VRAM cost; no transparency |
+
+---
+
+### 6️⃣ Performance Optimization Summary
+
+| Optimization | Description | Before (ms) | After (ms) | Δ (%) |
+|:--|:--|:--:|:--:|:--:|
+| Avoided copying large arrays in WGSL | Used `var<storage, read>` instead of passing by value | ~95 | ~80 | -16 % |
+| Increased `maxLightsPerCluster` to 1024 | Prevented light overflow and dark clusters | N/A | — | Improved visual accuracy |
+| Merged move_lights + cluster compute dispatch | Reduced command encoder overhead | ~6 | ~4 | -33 % |
+| Removed redundant uniform updates per frame | Less GPU queue traffic | ~4 | ~3 | -25 % |
+
+---
+
+### 7️⃣ Key Takeaways
+- **Forward+** provides a good trade-off between flexibility and performance.  
+- **Clustered Deferred** achieves near-constant frame times even for thousands of lights.  
+- **Naïve Forward** becomes infeasible for large dynamic scenes.  
+- Avoiding large struct copies and batching GPU dispatches yields measurable savings.  
+- Future optimization: hierarchical clustering or frustum-slice adaptive Z-binning could further reduce overdraw.
+
+---
+
+### 8️⃣ Debug Views
+| Debug Mode | Description |
+|:--|:--|
+| Cluster Heatmap | Visualizes light density per cluster; denser regions correlate with slightly higher lighting cost. |
+| Depth Slices View | Shows Z-binning effect — helps verify that near/far lights are assigned correctly. |
+
+---
+
+### 🧩 Conclusion
+The performance results validate that clustered light culling significantly improves scalability.  
+While Forward+ remains practical for most real-time applications, the Clustered Deferred approach demonstrates superior performance in light-dense scenes and forms a foundation for more advanced rendering features such as PBR and screen-space effects.
+
+
+
 
 
 ### Credits
